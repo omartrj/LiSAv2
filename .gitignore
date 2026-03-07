@@ -1,0 +1,9 @@
+# Editor
+__pycache__
+.venv
+.vscode/
+
+# datasets and results
+data*/
+results/
+checkpoints/
