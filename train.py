@@ -239,7 +239,7 @@ def main(args):
     else:
         model = LiSALSTMNet(input_channels=8, lstm_hidden_size=256, num_lstm_layers=2).to(DEVICE)
 
-    criterion = WeightedMultiLoss()
+    criterion = WeightedMultiLoss(use_smooth_loss=args.smooth, w_smooth=args.w_smooth)
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     # Polynomial Decay
@@ -344,6 +344,8 @@ if __name__ == "__main__":
 
     parser.add_argument("--checkpoint_dir", type=str, default="checkpoints", help="Directory to save checkpoints")
     parser.add_argument("--data_root", type=str, default="data", help="Root data directory (must contain train_split/, val_split/, test_split/ and preprocessing_params.json)")
+    parser.add_argument("--smooth", action='store_true', help="Enable temporal smoothness loss")
+    parser.add_argument("--w_smooth", type=float, default=1.0, help="Weight for smoothness loss (usato solo se --smooth è attivo)")
     
     args = parser.parse_args()
     main(args)
