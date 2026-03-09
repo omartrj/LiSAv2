@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+import random
+import json
 import argparse
 from tqdm import tqdm
 from model import LiSANet, LiSALSTMNet
@@ -11,20 +13,30 @@ from utils import create_trajectory_plot, save_statistics_report
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def load_sequence(seq_name, processed_dir='data/processed'):
-    """
-    Carica una sequenza processata dal disco.
-    """
-    seq_path = os.path.join(processed_dir, f"{seq_name}.pt")
+def load_preprocessing_params(data_root):
+    params_path = os.path.join(data_root, 'preprocessing_params.json')
+    with open(params_path) as f:
+        params = json.load(f)
+    mean_inv_dist = params['normalization']['mean_inv_dist']
+    std_inv_dist  = params['normalization']['std_inv_dist']
+    return mean_inv_dist, std_inv_dist
+
+def denorm_to_dist(norm_inv_dist, mean_inv_dist, std_inv_dist):
+    """Converte inv_dist normalizzato → distanza reale in metri."""
+    inv_dist = norm_inv_dist * std_inv_dist + mean_inv_dist
+    inv_dist = max(inv_dist, 1e-6)
+    return 1.0 / inv_dist
+
+def load_sequence(seq_name, split_dir):
+    seq_path = os.path.join(split_dir, f"{seq_name}.pt")
     if not os.path.exists(seq_path):
         raise FileNotFoundError(f"Sequence file not found: {seq_path}")
-    
-    data = torch.load(seq_path, mmap=False, weights_only=False)
-    return data
+    return torch.load(seq_path, mmap=False, weights_only=False)
 
-def inference_on_sequence(model, data, device):
+def inference_on_sequence(model, data, device, mean_inv_dist, std_inv_dist):
     """
     Esegue l'inferenza su tutti i frame di una sequenza.
+    Restituisce distanze in metri reali (denormalizzate).
     """
     # Estrai dati
     spectrograms = data['spectrograms'].to(device)  # (N, 8, F, T)
@@ -64,8 +76,8 @@ def inference_on_sequence(model, data, device):
                 pred_dist_val = 0.0
                 pred_angle_deg = 0.0
             else:
-                pred_dist_val = pred_dist.item()
-                # Converti sin/cos in angolo (gradi)
+                # Denormalizza inv_dist → distanza reale in metri
+                pred_dist_val = denorm_to_dist(pred_dist.item(), mean_inv_dist, std_inv_dist)
                 pred_angle_rad = torch.atan2(pred_sin, pred_cos)
                 pred_angle_deg = torch.rad2deg(pred_angle_rad).item()
             
@@ -94,32 +106,42 @@ def apply_postprocessing(pred_dists, pred_angles, pred_actives, method='median',
     
     return np.array(smooth_dists), np.array(smooth_angles), pred_actives
 
-def save_predictions_csv(gt_data, pred_dists, pred_angles, pred_actives, output_path, sample_rate=20):
+def save_predictions_csv(gt_data, pred_dists, pred_angles, pred_actives, output_path,
+                         mean_inv_dist=None, std_inv_dist=None, sample_rate=20):
     """
     Salva le predizioni e il ground truth in un CSV.
-    gt_data: (N, 4) con [dist, sin(angle), cos(angle), is_active]
+    gt_data: (N, 4) con [norm_inv_dist, sin(angle), cos(angle), is_active]
+    pred_dists: distanze reali già denormalizzate (in metri)
     """
     num_samples = len(pred_dists)
-
     timestamps = np.arange(num_samples) / sample_rate
-    
+
+    # Denormalizza gt inv_dist → distanza reale in metri
+    gt_norm_inv = gt_data[:, 0]
+    gt_active = gt_data[:, 3].astype(int)
+    if mean_inv_dist is not None and std_inv_dist is not None:
+        gt_inv = gt_norm_inv * std_inv_dist + mean_inv_dist
+        gt_inv = np.maximum(gt_inv, 1e-6)
+        gt_dist_m = np.where(gt_active.astype(bool), 1.0 / gt_inv, 0.0)
+    else:
+        gt_dist_m = gt_norm_inv
+
     # Converti gt sin/cos in angoli (gradi)
     gt_angle_rad = np.arctan2(gt_data[:, 1], gt_data[:, 2])
     gt_angle_deg = np.rad2deg(gt_angle_rad)
-    
-    gt_active = gt_data[:, 3].astype(int)
+
     pred_active_binary = (pred_actives >= 0.5).astype(int)
     
     df = pd.DataFrame({
         'time_s': timestamps,
-        'gt_dist': gt_data[:, 0],
+        'gt_dist': gt_dist_m,
         'gt_angle': gt_angle_deg,
         'gt_active': gt_active,
         'pred_dist': pred_dists,
         'pred_angle': pred_angles,
         'pred_active_prob': pred_actives,
         'pred_active': pred_active_binary,
-        'error_dist': np.abs(gt_data[:, 0] - pred_dists),
+        'error_dist': np.abs(gt_dist_m - pred_dists),
         'error_angle': np.abs((gt_angle_deg - pred_angles + 180) % 360 - 180),
         'error_active': (gt_active != pred_active_binary).astype(int)
     })
@@ -134,10 +156,24 @@ def save_predictions_csv(gt_data, pred_dists, pred_angles, pred_actives, output_
 
 
 def main(args):
-    # 1. Load Sequence
-    print(f"Loading sequence: {args.seq}")
-    data = load_sequence(args.seq, args.processed_dir)
-    
+    # 0. Carica parametri di preprocessing
+    mean_inv_dist, std_inv_dist = load_preprocessing_params(args.data_root)
+
+    test_dir = os.path.join(args.data_root, 'test_split')
+
+    # 1. Scegli la sequenza
+    if args.seq:
+        seq_name = args.seq
+    else:
+        available = [f[:-3] for f in os.listdir(test_dir) if f.endswith('.pt')]
+        if not available:
+            raise RuntimeError(f"No sequences found in {test_dir}")
+        seq_name = random.choice(available)
+        print(f"No sequence specified — randomly selected: {seq_name}")
+
+    print(f"Loading sequence: {seq_name}")
+    data = load_sequence(seq_name, test_dir)
+
     # 2. Load Model
     print(f"Loading model from: {args.model_path} (RNN Type: {args.rnn_type.upper()})")
     if args.rnn_type == 'gru':
@@ -152,7 +188,9 @@ def main(args):
         model.load_state_dict(checkpoint)
     
     # 3. Run Inference
-    pred_dists, pred_angles, pred_actives, gt_data = inference_on_sequence(model, data, DEVICE)
+    pred_dists, pred_angles, pred_actives, gt_data = inference_on_sequence(
+        model, data, DEVICE, mean_inv_dist, std_inv_dist
+    )
     
     # 4. Applica Post-Processing (opzionale)
     postprocess_info = {
@@ -176,12 +214,13 @@ def main(args):
         pred_angles = np.array(smooth_angles)
         
     # 5. Crea directory di output
-    output_dir = os.path.join(args.output_dir, args.seq)
+    output_dir = os.path.join(args.output_dir, seq_name)
     os.makedirs(output_dir, exist_ok=True)
     
     # 6. Salva CSV e Plot
     csv_path = os.path.join(output_dir, 'predictions.csv')
-    df = save_predictions_csv(gt_data, pred_dists, pred_angles, pred_actives, csv_path, sample_rate=20)
+    df = save_predictions_csv(gt_data, pred_dists, pred_angles, pred_actives, csv_path,
+                              mean_inv_dist=mean_inv_dist, std_inv_dist=std_inv_dist, sample_rate=20)
     
     plot_check_path = os.path.join(output_dir, 'trajectory.png')
     create_trajectory_plot(df, gt_data, pred_dists, pred_angles, plot_check_path, mic_coords=data['microphones'].numpy())
@@ -192,10 +231,10 @@ def main(args):
     print(f"\nAll outputs saved to: {output_dir}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Esegue inferenza su una singola sequenza pre-processata.")
-    parser.add_argument("--seq", type=str, required=True, help="Sequence name (e.g., seq000)")
+    parser = argparse.ArgumentParser(description="Esegue inferenza su una singola sequenza del test set.")
+    parser.add_argument("--seq", type=str, default=None, help="Sequence name (e.g., seq00). Se omesso, sceglie una sequenza random dal test set.")
     parser.add_argument("--model_path", type=str, default="checkpoints/best_model.pth", help="Path to the trained model")
-    parser.add_argument("--processed_dir", type=str, default="data/processed", help="Directory with processed dataset")
+    parser.add_argument("--data_root", type=str, default="data", help="Root data directory (deve contenere test_split/ e preprocessing_params.json)")
     parser.add_argument("--output_dir", type=str, default="inference_results", help="Directory to save inference outputs")
 
     # Post-processing options
