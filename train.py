@@ -393,7 +393,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=200, help="Number of training epochs")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training")
     parser.add_argument("--seq_len", type=int, default=50, help="Sequence length in frames (e.g., 50 steps = 2.5s)")
-    parser.add_argument("--lr", type=float, default=0.0025, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
     parser.add_argument("--patience", type=int, default=15, help="Epoch patience for Early Stopping")
     parser.add_argument("--resume", action='store_true', help="Resume training from latest checkpoint")
     parser.add_argument("--rnn_type", type=str, default='gru', choices=['gru', 'lstm'], help="RNN architecture to use")
