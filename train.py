@@ -16,7 +16,7 @@ from utils import MetricTracker
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class WeightedMultiLoss(nn.Module):
-    def __init__(self, w_dist=1.0, w_accdoa=5.0, w_smooth=0.5, use_smooth_loss=False):
+    def __init__(self, w_dist=1.0, w_accdoa=5.0, w_smooth=1.0, use_smooth_loss=False):
         super().__init__()
         self.mse = nn.MSELoss(reduction='none')
         self.huber = nn.HuberLoss(reduction='none')
@@ -64,7 +64,7 @@ class WeightedMultiLoss(nn.Module):
         }
     
 class NewWeightedMultiLoss(nn.Module):
-    def __init__(self, w_dist=1.0, w_accdoa=5.0, w_smooth=0.5, use_smooth_loss=False):
+    def __init__(self, w_dist=1.0, w_accdoa=5.0, w_smooth=1.0, use_smooth_loss=False):
         super().__init__()
         self.mse = nn.MSELoss(reduction='none')
         self.huber = nn.HuberLoss(reduction='none')
@@ -298,8 +298,8 @@ def main(args):
     else:
         model = LiSALSTMNet(input_channels=8, lstm_hidden_size=256, num_lstm_layers=2).to(DEVICE)
 
-    #criterion = WeightedMultiLoss(use_smooth_loss=args.smooth, w_smooth=args.w_smooth)
-    criterion = NewWeightedMultiLoss(use_smooth_loss=args.smooth, w_smooth=args.w_smooth)
+    criterion = WeightedMultiLoss(use_smooth_loss=args.smooth, w_smooth=args.w_smooth)
+    #criterion = NewWeightedMultiLoss(use_smooth_loss=args.smooth, w_smooth=args.w_smooth)
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     # Reduce on Plateau
