@@ -30,11 +30,10 @@ class WeightedMultiLoss(nn.Module):
         mask = target_active.bool()
         
         # 1. DISTANCE LOSS (MSE su inv_dist normalizzata)
-        error_sq = (pred_dist - target_dist) ** 2
         if mask.any():
-            loss_dist = error_sq[mask].mean()
+            loss_dist = self.mse(pred_dist[mask], target_dist[mask]).mean()
         else:
-            loss_dist = error_sq.mean() * 0.0
+            loss_dist = torch.tensor(0.0, device=pred_dist.device)
 
         # 2. ACCDOA LOSS
         target_active_expanded = target_active.unsqueeze(-1)
@@ -63,6 +62,66 @@ class WeightedMultiLoss(nn.Module):
             "loss_accdoa": loss_accdoa.detach(),
             "loss_smooth": loss_smooth.detach(),
         }
+    
+class NewWeightedMultiLoss(nn.Module):
+    def __init__(self, w_dist=1.0, w_accdoa=1.0, w_smooth=1.0, use_smooth_loss=False):
+        super().__init__()
+        self.mse = nn.MSELoss(reduction='none')
+        self.huber = nn.HuberLoss(reduction='none')
+        self.w_dist = w_dist
+        self.w_accdoa = w_accdoa
+        self.w_smooth = w_smooth
+        self.use_smooth_loss = use_smooth_loss
+
+    def forward(self, pred_dist, target_dist, pred_accdoa, target_angle, target_active):
+        mask = target_active.bool()
+        
+        # 1. DISTANCE LOSS (Masked)
+        # Scale: Z-score (mean 0, std 1)
+        if mask.any():
+            loss_dist = self.mse(pred_dist[mask], target_dist[mask]).mean()
+        else:
+            loss_dist = torch.tensor(0.0, device=pred_dist.device)
+
+        # 2. ACCDOA - LOCALIZATION LOSS (Masked)
+        # Scale: Cartesian coordinates [-1, 1]
+        # This aligns perfectly with your Angle MAE metric
+        if mask.any():
+            loss_accdoa_loc = self.mse(pred_accdoa[mask], target_angle[mask]).mean()
+        else:
+            loss_accdoa_loc = torch.tensor(0.0, device=pred_dist.device)
+
+        # 3. ACCDOA - DETECTION LOSS (Unmasked)
+        # This ensures the model learns when the source is silent
+        target_active_expanded = target_active.unsqueeze(-1)
+        target_accdoa_det = target_angle * target_active_expanded
+        loss_accdoa_det = self.mse(pred_accdoa, target_accdoa_det).mean()
+        
+        # 4. TEMPORAL SMOOTHNESS LOSS
+        loss_smooth = torch.tensor(0.0, device=pred_dist.device)
+        if self.use_smooth_loss:
+            mask_smooth = mask[:, 1:] & mask[:, :-1]
+            if mask_smooth.any():
+                diff_accdoa = pred_accdoa[:, 1:, :] - pred_accdoa[:, :-1, :]
+                loss_smooth_accdoa = self.mse(diff_accdoa[mask_smooth], torch.zeros_like(diff_accdoa[mask_smooth])).mean()
+                diff_dist = pred_dist[:, 1:] - pred_dist[:, :-1]
+                loss_smooth_dist = self.huber(diff_dist[mask_smooth], torch.zeros_like(diff_dist[mask_smooth])).mean()
+                loss_smooth = loss_smooth_accdoa + loss_smooth_dist
+
+        # Combined Loss
+        # Localization task: loss_dist + loss_accdoa_loc
+        # Detection task: loss_accdoa_det
+        total_loss = (self.w_dist * loss_dist) + \
+                     (self.w_accdoa * (loss_accdoa_loc + loss_accdoa_det)) + \
+                     (self.w_smooth * loss_smooth)
+
+        return {
+            "loss":        total_loss,
+            "loss_dist":   loss_dist.detach(),
+            "loss_accdoa": (loss_accdoa_loc + loss_accdoa_det).detach(),
+            "loss_smooth": loss_smooth.detach(),
+        }
+
     
 def compute_metrics(pred_dist, pred_accdoa, target_dist, target_angle, target_active,
                     mean_inv_dist=None, std_inv_dist=None):
@@ -239,7 +298,8 @@ def main(args):
     else:
         model = LiSALSTMNet(input_channels=8, lstm_hidden_size=256, num_lstm_layers=2).to(DEVICE)
 
-    criterion = WeightedMultiLoss(use_smooth_loss=args.smooth, w_smooth=args.w_smooth)
+    #criterion = WeightedMultiLoss(use_smooth_loss=args.smooth, w_smooth=args.w_smooth)
+    criterion = NewWeightedMultiLoss(use_smooth_loss=args.smooth, w_smooth=args.w_smooth)
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     # Polynomial Decay
