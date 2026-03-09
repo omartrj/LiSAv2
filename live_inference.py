@@ -2,6 +2,7 @@ import torch
 import torchaudio
 import numpy as np
 import os
+import json
 import argparse
 import time
 import pandas as pd
@@ -121,6 +122,7 @@ def main():
     # - un file `microphones.csv` con le coordinate dei microfoni
     # - un file `gt.csv` con la ground truth (opzionale, per valutazione)
     parser.add_argument("--model_path", type=str, default="checkpoints/best_model.pth", help="Path to the trained model")
+    parser.add_argument("--data_root", type=str, default="data", help="Root data directory (deve contenere preprocessing_params.json)")
     parser.add_argument("--output_dir", type=str, default="live_inference_results", help="Directory to save inference outputs")
     
     # Post-processing options
@@ -130,6 +132,14 @@ def main():
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Carica parametri di normalizzazione
+    params_path = os.path.join(args.data_root, 'preprocessing_params.json')
+    with open(params_path) as f:
+        preproc = json.load(f)
+    mean_inv_dist = preproc['normalization']['mean_inv_dist']
+    std_inv_dist  = preproc['normalization']['std_inv_dist']
+    print(f"Normalization stats: mean_inv_dist={mean_inv_dist:.6f}, std_inv_dist={std_inv_dist:.6f}")
 
     # Load Microphones
     mic_path = os.path.join(args.seq_dir, 'microphones.csv')
@@ -230,7 +240,10 @@ def main():
                 dist_m = 0.0
                 angle_deg = 0.0
             else:
-                dist_m = pred_dist.item()
+                # Denormalizza inv_dist normalizzata → distanza reale in metri
+                inv_dist = pred_dist.item() * std_inv_dist + mean_inv_dist
+                inv_dist = max(inv_dist, 1e-6)
+                dist_m = 1.0 / inv_dist
                 angle_deg = np.degrees(np.arctan2(sin_val, cos_val))
 
             # Post-process if requested
