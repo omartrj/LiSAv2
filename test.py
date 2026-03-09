@@ -61,7 +61,7 @@ def plot_error_by_distance(target_dist, pred_dist, target_angle, pred_angle, out
     plt.savefig(os.path.join(output_dir, "error_vs_distance.png"))
     plt.close()
 
-def evaluate_model(model, loader):
+def evaluate_model(model, loader, mean_inv_dist, std_inv_dist):
     model.eval()
     all_pred_dist, all_target_dist = [], []
     all_pred_angle, all_target_angle = [], []
@@ -78,6 +78,17 @@ def evaluate_model(model, loader):
             # Forward: nuovo output con ACCDOA
             pred_dist, pred_accdoa, _ = model(specs, mic_coords, hidden_state=None)
             
+            # Denormalizza pred_dist (inv_dist norm → metri)
+            # Solo sui frame attivi; gli inattivi verranno azzerati comunque
+            pred_inv = pred_dist * std_inv_dist + mean_inv_dist
+            pred_inv = torch.clamp(pred_inv, min=1e-6)
+            pred_dist_m = 1.0 / pred_inv
+
+            # Denormalizza gt_dist allo stesso modo
+            gt_inv = gt_dist * std_inv_dist + mean_inv_dist
+            gt_inv = torch.clamp(gt_inv, min=1e-6)
+            gt_dist_m = 1.0 / gt_inv
+
             # ACCDOA (B, Seq, 2)
             pred_sin = pred_accdoa[:, :, 0]
             pred_cos = pred_accdoa[:, :, 1]
@@ -88,9 +99,8 @@ def evaluate_model(model, loader):
             pred_active_prob = torch.norm(pred_accdoa, p=2, dim=-1)
             
             # Azzeriamo dist e angle se non c'è detection (prob < 0.5)
-            # per calcolare metriche più "oneste"
             idle_mask = pred_active_prob < 0.5
-            pred_dist[idle_mask] = 0.0
+            pred_dist_m[idle_mask] = 0.0
             
             pred_angle_rad = torch.atan2(pred_sin, pred_cos)
             pred_angle_rad[idle_mask] = 0.0
@@ -99,8 +109,8 @@ def evaluate_model(model, loader):
             target_angle_rad = torch.atan2(gt_sin, gt_cos)
             target_angle_deg = torch.rad2deg(target_angle_rad)
             
-            all_pred_dist.extend(pred_dist.cpu().numpy().flatten())
-            all_target_dist.extend(gt_dist.cpu().numpy().flatten())
+            all_pred_dist.extend(pred_dist_m.cpu().numpy().flatten())
+            all_target_dist.extend(gt_dist_m.cpu().numpy().flatten())
             all_pred_angle.extend(pred_angle_deg.cpu().numpy().flatten())
             all_target_angle.extend(target_angle_deg.cpu().numpy().flatten())
             all_pred_active.extend(pred_active_prob.cpu().numpy().flatten())
@@ -111,7 +121,21 @@ def evaluate_model(model, loader):
             np.array(all_pred_active), np.array(all_target_active))
 
 def main(args):
-    _, _, test_loader = get_dataloaders(batch_size=args.batch_size, seq_len=args.seq_len, processed_dir='data/processed')
+    # Carica parametri di normalizzazione
+    params_path = os.path.join(args.data_root, 'preprocessing_params.json')
+    with open(params_path) as f:
+        preproc = json.load(f)
+    mean_inv_dist = preproc['normalization']['mean_inv_dist']
+    std_inv_dist  = preproc['normalization']['std_inv_dist']
+    print(f"Normalization stats: mean_inv_dist={mean_inv_dist:.6f}, std_inv_dist={std_inv_dist:.6f}")
+
+    _, _, test_loader = get_dataloaders(
+        batch_size=args.batch_size,
+        train_dir=os.path.join(args.data_root, 'train_split'),
+        val_dir=os.path.join(args.data_root, 'val_split'),
+        test_dir=os.path.join(args.data_root, 'test_split'),
+        seq_len=args.seq_len
+    )
     if args.rnn_type == 'gru':
         model = LiSANet(input_channels=8, gru_hidden_size=256, num_gru_layers=2).to(DEVICE)
     else:
@@ -119,7 +143,9 @@ def main(args):
     checkpoint = torch.load(args.model_path, map_location=DEVICE)
     model.load_state_dict(checkpoint['model_state_dict'] if 'model_state_dict' in checkpoint else checkpoint)
         
-    p_dist, t_dist, p_angle, t_angle, p_active_prob, t_active = evaluate_model(model, test_loader)
+    p_dist, t_dist, p_angle, t_angle, p_active_prob, t_active = evaluate_model(
+        model, test_loader, mean_inv_dist, std_inv_dist
+    )
     
     if args.postprocess:
         processor = PostProcessor() # Instantiated without history_length or method
@@ -196,6 +222,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, default="checkpoints/best_model.pth", help="Path to the trained model")
+    parser.add_argument("--data_root", type=str, default="data", help="Root data directory (deve contenere train_split/, val_split/, test_split/ e preprocessing_params.json)")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size for testing")
     parser.add_argument("--seq_len", type=int, default=50, help="Sequence length in frames (e.g., 50 steps = 2.5s)")
     parser.add_argument("--output_dir", type=str, default="test_results", help="Directory to save test outputs")
