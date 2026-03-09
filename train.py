@@ -346,14 +346,14 @@ def main(args):
         train_metrics = train_one_epoch(model, train_loader, optimizer, criterion)
         val_metrics = validate(model, val_loader, criterion)
         
-        smooth_str = f" L_smooth: {train_metrics['loss_smooth']:.4f} |" if args.smooth else ""
-        print(f"TRAIN | Loss: {train_metrics['loss']:.4f} | L_dist: {train_metrics['loss_dist']:.4f} | L_accdoa: {train_metrics['loss_accdoa']:.4f} |{smooth_str} "
+        smooth_str = f", L_smooth: {train_metrics['loss_smooth']:.4f}" if args.smooth else ""
+        print(f"TRAIN | Loss: {train_metrics['loss']:.4f} (L_dist: {train_metrics['loss_dist']:.4f}, L_accdoa: {train_metrics['loss_accdoa']:.4f}{smooth_str} ) |"
               f"Dist MAPE: {train_metrics['dist_mape']:.2f}% | Dist RMSE: {train_metrics['dist_rmse']:.2f}m | "
               f"Angle MAE: {train_metrics['angle_mae']:.2f}° | Angle Acc@15°: {train_metrics['angle_acc_15deg']:.1f}% | "
               f"F1 Det: {train_metrics['f1_det']:.2f}%")
 
-        smooth_str = f" L_smooth: {val_metrics['loss_smooth']:.4f} |" if args.smooth else ""
-        print(f"VAL   | Loss: {val_metrics['loss']:.4f} | L_dist: {val_metrics['loss_dist']:.4f} | L_accdoa: {val_metrics['loss_accdoa']:.4f} |{smooth_str} "
+        smooth_str = f", L_smooth: {val_metrics['loss_smooth']:.4f}" if args.smooth else ""
+        print(f"VAL   | Loss: {val_metrics['loss']:.4f} (L_dist: {val_metrics['loss_dist']:.4f}, L_accdoa: {val_metrics['loss_accdoa']:.4f}{smooth_str} ) |"
               f"Dist MAPE: {val_metrics['dist_mape']:.2f}% | Dist RMSE: {val_metrics['dist_rmse']:.2f}m | "
               f"Angle MAE: {val_metrics['angle_mae']:.2f}° | Angle Acc@15°: {val_metrics['angle_acc_15deg']:.1f}% | "
               f"F1 Det: {val_metrics['f1_det']:.2f}%")
