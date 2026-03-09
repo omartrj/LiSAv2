@@ -288,12 +288,12 @@ def main(args):
         
         print(f"TRAIN | Loss: {train_metrics['loss']:.4f} | "
               f"Dist MAPE: {train_metrics['dist_mape']:.2f}% | Dist RMSE: {train_metrics['dist_rmse']:.2f}m | "
-              f"Angle MSE: {train_metrics['angle_mse']:.2f}° | Angle Acc@15°: {train_metrics['angle_acc_15deg']:.1f}% | "
+              f"Angle MAE: {train_metrics['angle_mae']:.2f}° | Angle Acc@15°: {train_metrics['angle_acc_15deg']:.1f}% | "
               f"F1 Det: {train_metrics['f1_det']:.2f}%")
 
         print(f"VAL   | Loss: {val_metrics['loss']:.4f} | "
               f"Dist MAPE: {val_metrics['dist_mape']:.2f}% | Dist RMSE: {val_metrics['dist_rmse']:.2f}m | "
-              f"Angle MSE: {val_metrics['angle_mse']:.2f}° | Angle Acc@15°: {val_metrics['angle_acc_15deg']:.1f}% | "
+              f"Angle MAE: {val_metrics['angle_mae']:.2f}° | Angle Acc@15°: {val_metrics['angle_acc_15deg']:.1f}% | "
               f"F1 Det: {val_metrics['f1_det']:.2f}%")
         
         scheduler.step()
@@ -334,8 +334,8 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--epochs", type=int, default=300, help="Number of training epochs")
-    parser.add_argument("--batch_size", type=int, default=4, help="Batch size for training")
+    parser.add_argument("--epochs", type=int, default=200, help="Number of training epochs")
+    parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training")
     parser.add_argument("--seq_len", type=int, default=50, help="Sequence length in frames (e.g., 50 steps = 2.5s)")
     parser.add_argument("--lr", type=float, default=0.0025, help="Learning rate")
     parser.add_argument("--patience", type=int, default=15, help="Epoch patience for Early Stopping")
