@@ -397,7 +397,6 @@ if __name__ == "__main__":
     parser.add_argument("--patience", type=int, default=15, help="Epoch patience for Early Stopping")
     parser.add_argument("--resume", action='store_true', help="Resume training from latest checkpoint")
     parser.add_argument("--rnn_type", type=str, default='gru', choices=['gru', 'lstm'], help="RNN architecture to use")
-
     parser.add_argument("--checkpoint_dir", type=str, default="checkpoints", help="Directory to save checkpoints")
     parser.add_argument("--data_root", type=str, default="data", help="Root data directory (must contain train_split/, val_split/, test_split/ and preprocessing_params.json)")
     parser.add_argument("--smooth", action='store_true', help="Enable temporal smoothness loss")
