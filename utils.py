@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-def create_trajectory_plot(df, gt_data, pred_dists, pred_angles, output_path, mic_coords=None, has_gt=True):
+def create_trajectory_plot(df, output_path, mic_coords=None, has_gt=True):
     """
     Crea e salva il plot spaziale e temporale con i risultati dell'inferenza.
     Compatibile sia con metriche offline (inference.py) che online (live_inference.py).

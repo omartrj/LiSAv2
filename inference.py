@@ -40,7 +40,7 @@ def inference_on_sequence(model, data, device, mean_inv_dist, std_inv_dist):
     """
     # Estrai dati
     spectrograms = data['spectrograms'].to(device)  # (N, 8, F, T)
-    gt_data = data['gt']  # (N, 4) -> [dist, sin(angle), cos(angle), is_active]
+    gt_data = data['gt']  # (N, 4) -> [inv_dist_normalized, cos(angle), sin(angle), is_active]
     mic_coords = data['microphones'].unsqueeze(0).to(device)  # (1, 4, 3)
     
     num_frames = spectrograms.shape[0]
@@ -88,29 +88,11 @@ def inference_on_sequence(model, data, device, mean_inv_dist, std_inv_dist):
     
     return np.array(pred_dists), np.array(pred_angles), np.array(pred_actives), gt_data[:].numpy()
 
-def apply_postprocessing(pred_dists, pred_angles, pred_actives, method='median', history=5):
-    """
-    Applica post-processing (smoothing) alle predizioni di distanza e angolo.
-    La probabilità di attività non viene smoothata (già stabile grazie alla GRU).
-    """
-    print(f"Applying post-processing ({method}, history={history})...")
-    processor = PostProcessor(history_length=history, method=method)
-    
-    smooth_dists = []
-    smooth_angles = []
-    
-    for d, a, prob in zip(pred_dists, pred_angles, pred_actives):
-        sd, sa = processor.update(d, a, is_active=(prob >= 0.5))
-        smooth_dists.append(sd)
-        smooth_angles.append(sa)
-    
-    return np.array(smooth_dists), np.array(smooth_angles), pred_actives
-
 def save_predictions_csv(gt_data, pred_dists, pred_angles, pred_actives, output_path,
                          mean_inv_dist=None, std_inv_dist=None, sample_rate=20):
     """
     Salva le predizioni e il ground truth in un CSV.
-    gt_data: (N, 4) con [norm_inv_dist, sin(angle), cos(angle), is_active]
+    gt_data: (N, 4) con [norm_inv_dist, cos(angle), sin(angle), is_active]
     pred_dists: distanze reali già denormalizzate (in metri)
     """
     num_samples = len(pred_dists)
@@ -223,7 +205,7 @@ def main(args):
                               mean_inv_dist=mean_inv_dist, std_inv_dist=std_inv_dist, sample_rate=20)
     
     plot_check_path = os.path.join(output_dir, 'trajectory.png')
-    create_trajectory_plot(df, gt_data, pred_dists, pred_angles, plot_check_path, mic_coords=data['microphones'].numpy())
+    create_trajectory_plot(df, plot_check_path, mic_coords=data['microphones'].numpy())
     
     stats_path = os.path.join(output_dir, 'statistics.txt')
     save_statistics_report(df, stats_path, postprocess_info=postprocess_info)

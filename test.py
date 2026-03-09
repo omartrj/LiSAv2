@@ -71,7 +71,7 @@ def evaluate_model(model, loader, mean_inv_dist, std_inv_dist):
         for batch in tqdm(loader, desc="Testing"):
             specs      = batch['spectrogram'].to(DEVICE)
             gt_dist    = batch['gt_dist'].to(DEVICE)
-            gt_angle   = batch['gt_angle'].to(DEVICE)   # (B, Seq, 2) [sin, cos]
+            gt_angle   = batch['gt_angle'].to(DEVICE)   # (B, Seq, 2) [cos, sin]
             gt_active  = batch['gt_active'].to(DEVICE)  # (B, Seq)
             mic_coords = batch['microphones'].to(DEVICE)
             

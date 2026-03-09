@@ -190,7 +190,7 @@ def train_one_epoch(model, dataloader, optimizer, criterion):
     for batch in pbar:
         specs      = batch['spectrogram'].to(DEVICE)  # (B, Seq, 8, F, T)
         gt_dist    = batch['gt_dist'].to(DEVICE)      # (B, Seq)
-        gt_angle   = batch['gt_angle'].to(DEVICE)     # (B, Seq, 2) [sin, cos]
+        gt_angle   = batch['gt_angle'].to(DEVICE)     # (B, Seq, 2) [cos, sin]
         gt_active  = batch['gt_active'].to(DEVICE)    # (B, Seq)
         mic_coords = batch['microphones'].to(DEVICE)  # (B, 4, 3)
         

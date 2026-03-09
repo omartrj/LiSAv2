@@ -109,8 +109,7 @@ def generate_plots_and_statistics(csv_path, output_dir, has_gt=True, postprocess
     out_plot = os.path.join(output_dir, 'trajectory.png')
     out_stats = os.path.join(output_dir, 'statistics.txt')
 
-    create_trajectory_plot(df, gt_data=None, pred_dists=None, pred_angles=None, 
-                           output_path=out_plot, mic_coords=mic_coords, has_gt=has_gt)
+    create_trajectory_plot(df, out_plot, mic_coords=mic_coords, has_gt=has_gt)
                            
     save_statistics_report(df, out_stats, has_gt=has_gt, postprocess_info=postprocess_info)
 
