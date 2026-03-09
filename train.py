@@ -16,7 +16,7 @@ from utils import MetricTracker
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class WeightedMultiLoss(nn.Module):
-    def __init__(self, w_dist=1.0, w_accdoa=2.0, w_smooth=1.0, use_smooth_loss=False):
+    def __init__(self, w_dist=1.0, w_accdoa=2.0, w_smooth=0.5, use_smooth_loss=False):
         super().__init__()
         self.mse = nn.MSELoss(reduction='none')
         self.huber = nn.HuberLoss(reduction='none')
@@ -64,7 +64,7 @@ class WeightedMultiLoss(nn.Module):
         }
     
 class NewWeightedMultiLoss(nn.Module):
-    def __init__(self, w_dist=1.0, w_accdoa=1.0, w_smooth=1.0, use_smooth_loss=False):
+    def __init__(self, w_dist=1.0, w_accdoa=2.0, w_smooth=0.5, use_smooth_loss=False):
         super().__init__()
         self.mse = nn.MSELoss(reduction='none')
         self.huber = nn.HuberLoss(reduction='none')
@@ -303,18 +303,18 @@ def main(args):
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     # Polynomial Decay
-    scheduler = torch.optim.lr_scheduler.PolynomialLR(
-        optimizer,
-        total_iters=args.epochs,
-        power=0.9
-    )
-    # Reduce on Plateau (commentato per ora, da testare in futuro)
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    # scheduler = torch.optim.lr_scheduler.PolynomialLR(
     #     optimizer,
-    #     mode='min',
-    #     factor=0.5,
-    #     patience=5,
+    #     total_iters=args.epochs,
+    #     power=0.9
     # )
+    # Reduce on Plateau
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode='min',
+        factor=0.5,
+        patience=5,
+    )
     
     # Paths
     best_model_path = os.path.join(args.checkpoint_dir, "best_model.pth")
@@ -358,7 +358,7 @@ def main(args):
               f"Angle MAE: {val_metrics['angle_mae']:.2f}° | Angle Acc@15°: {val_metrics['angle_acc_15deg']:.1f}% | "
               f"F1 Det: {val_metrics['f1_det']:.2f}%")
         
-        scheduler.step()
+        scheduler.step(val_metrics['loss'])
 
         # Checkpointing
         val_loss = val_metrics['loss']
@@ -407,7 +407,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_dir", type=str, default="checkpoints", help="Directory to save checkpoints")
     parser.add_argument("--data_root", type=str, default="data", help="Root data directory (must contain train_split/, val_split/, test_split/ and preprocessing_params.json)")
     parser.add_argument("--smooth", action='store_true', help="Enable temporal smoothness loss")
-    parser.add_argument("--w_smooth", type=float, default=1.0, help="Weight for smoothness loss (usato solo se --smooth è attivo)")
+    parser.add_argument("--w_smooth", type=float, default=0.5, help="Weight for smoothness loss (usato solo se --smooth è attivo)")
     
     args = parser.parse_args()
     main(args)
