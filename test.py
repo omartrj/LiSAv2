@@ -26,7 +26,7 @@ def plot_error_by_distance(target_dist, pred_dist, target_angle, pred_angle, out
     diff_angle = (pred_angle - target_angle + 180) % 360 - 180
     err_angle = np.abs(diff_angle)
     
-    bins = np.arange(0, np.max(target_dist) + 5, 5)
+    bins = np.arange(0, np.max(target_dist) + 2, 2)
     bin_centers = (bins[:-1] + bins[1:]) / 2
     
     dist_mae = []
