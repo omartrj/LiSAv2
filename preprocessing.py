@@ -136,9 +136,9 @@ def process_sequence(seq_name):
         sin_angle = np.sin(angle_rad)
         cos_angle = np.cos(angle_rad)
         
-        # (N, 4) con colonne (inv_distance, sin(angle), cos(angle), is_active)
+        # (N, 4) con colonne (inv_distance, cos(angle), sin(angle), is_active)
         # NOTA: inv_distance non è ancora normalizzato — la normalizzazione avviene dopo, usando le statistiche del train.
-        gt_tensor = torch.tensor([inv_dist, sin_angle, cos_angle, is_active], dtype=torch.float32)
+        gt_tensor = torch.tensor([inv_dist, cos_angle, sin_angle, is_active], dtype=torch.float32)
 
         spectrogram_list.append(spec_tensor)
         gt_list.append(gt_tensor)

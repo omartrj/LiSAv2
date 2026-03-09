@@ -67,9 +67,9 @@ def inference_on_sequence(model, data, device, mean_inv_dist, std_inv_dist):
             # ACCDOA: norm = probabilità di attività
             pred_active_prob = torch.norm(pred_accdoa[0, 0], p=2).item()
             
-            # Estrai sin e cos (NON normalizzati, per l'atan2 conta solo il rapporto)
-            pred_sin = pred_accdoa[0, 0, 0]
-            pred_cos = pred_accdoa[0, 0, 1]
+            # Estrai cos e sin (NON normalizzati, per l'atan2 conta solo il rapporto)
+            pred_cos = pred_accdoa[0, 0, 0]
+            pred_sin = pred_accdoa[0, 0, 1]
             
             # Se la sirena non è attiva, azzeriamo distanza e angolo
             if pred_active_prob < 0.5:
@@ -126,8 +126,8 @@ def save_predictions_csv(gt_data, pred_dists, pred_angles, pred_actives, output_
     else:
         gt_dist_m = gt_norm_inv
 
-    # Converti gt sin/cos in angoli (gradi)
-    gt_angle_rad = np.arctan2(gt_data[:, 1], gt_data[:, 2])
+    # Converti gt cos/sin in angoli (gradi)
+    gt_angle_rad = np.arctan2(gt_data[:, 2], gt_data[:, 1])
     gt_angle_deg = np.rad2deg(gt_angle_rad)
 
     pred_active_binary = (pred_actives >= 0.5).astype(int)

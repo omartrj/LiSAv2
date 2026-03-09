@@ -158,8 +158,8 @@ def compute_metrics(pred_dist, pred_accdoa, target_dist, target_angle, target_ac
             res['dist_rmse'] = torch.sqrt((errors_dist ** 2).mean()).item()
 
             # Angolo
-            pred_angle_rad = torch.atan2(pred_accdoa[:, :, 0], pred_accdoa[:, :, 1])
-            target_angle_rad = torch.atan2(target_angle[:, :, 0], target_angle[:, :, 1])
+            pred_angle_rad = torch.atan2(pred_accdoa[:, :, 1], pred_accdoa[:, :, 0])
+            target_angle_rad = torch.atan2(target_angle[:, :, 1], target_angle[:, :, 0])
             angle_diff = torch.abs(pred_angle_rad[mask] - target_angle_rad[mask])
             angle_diff = torch.min(angle_diff, 2 * math.pi - angle_diff)
             angle_deg = torch.rad2deg(angle_diff)

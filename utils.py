@@ -18,9 +18,9 @@ def create_trajectory_plot(df, gt_data, pred_dists, pred_angles, output_path, mi
 
     if has_gt:
         gt_active = df['gt_active'].astype(bool).values if 'gt_active' in df.columns else np.ones(len(df), dtype=bool)
-        # gt_data[N, 4]: dist, sin, cos, active
+        # gt_data[N, 4]: dist, cos, sin, active
         if gt_data is not None and gt_data.shape[1] == 4:
-            gt_rad = np.arctan2(gt_data[:, 1], gt_data[:, 2])
+            gt_rad = np.arctan2(gt_data[:, 2], gt_data[:, 1])
             gt_dist = gt_data[:, 0]
         else:
             gt_rad = np.deg2rad(df['gt_angle'].values)

@@ -37,11 +37,11 @@ class LiSADataset(Dataset):
         gt_seq = data['gt'][start_idx:end_idx]
         mic_coords = data['microphones']
         
-        # gt_seq contains (dist, sin, cos, is_active)
+        # gt_seq contains (dist, cos, sin, is_active)
         return {
             'spectrogram': spec_seq.float(),
             'gt_dist': gt_seq[:, 0].float(),
-            'gt_angle': gt_seq[:, 1:3].float(),  # Returns (Seq, 2) [sin, cos]
+            'gt_angle': gt_seq[:, 1:3].float(),  # Returns (Seq, 2) [cos, sin]
             'gt_active': gt_seq[:, 3].float(),   # Returns (Seq,) [0 or 1]
             'microphones': mic_coords.float()
         }

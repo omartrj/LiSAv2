@@ -231,8 +231,8 @@ def main():
             with torch.no_grad():
                 pred_dist, pred_accdoa, hidden_state = model(input_tensor, mic_coords, hidden_state)
             
-            sin_val = pred_accdoa[0, 0, 0].item()
-            cos_val = pred_accdoa[0, 0, 1].item()
+            cos_val = pred_accdoa[0, 0, 0].item()
+            sin_val = pred_accdoa[0, 0, 1].item()
             # ACCDOA: norma vettoriale è la probabilità
             pred_active_prob = np.sqrt(sin_val**2 + cos_val**2)
             

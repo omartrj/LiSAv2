@@ -90,10 +90,10 @@ def evaluate_model(model, loader, mean_inv_dist, std_inv_dist):
             gt_dist_m = 1.0 / gt_inv
 
             # ACCDOA (B, Seq, 2)
-            pred_sin = pred_accdoa[:, :, 0]
-            pred_cos = pred_accdoa[:, :, 1]
-            gt_sin   = gt_angle[:, :, 0]
-            gt_cos   = gt_angle[:, :, 1]
+            pred_cos = pred_accdoa[:, :, 0]
+            pred_sin = pred_accdoa[:, :, 1]
+            gt_cos   = gt_angle[:, :, 0]
+            gt_sin   = gt_angle[:, :, 1]
             
             # Probabilità attività (norma del vettore)
             pred_active_prob = torch.norm(pred_accdoa, p=2, dim=-1)
