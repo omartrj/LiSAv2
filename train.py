@@ -302,12 +302,6 @@ def main(args):
     criterion = NewWeightedMultiLoss(use_smooth_loss=args.smooth, w_smooth=args.w_smooth)
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-    # Polynomial Decay
-    # scheduler = torch.optim.lr_scheduler.PolynomialLR(
-    #     optimizer,
-    #     total_iters=args.epochs,
-    #     power=0.9
-    # )
     # Reduce on Plateau
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
