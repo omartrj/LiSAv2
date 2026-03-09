@@ -1,7 +1,6 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 import os
-import random
 import functools
 
 @functools.lru_cache(maxsize=128)
@@ -40,35 +39,29 @@ class LiSADataset(Dataset):
         
         # gt_seq contains (dist, sin, cos, is_active)
         return {
-            'spectrogram': spec_seq,
+            'spectrogram': spec_seq.float(),
             'gt_dist': gt_seq[:, 0].float(),
             'gt_angle': gt_seq[:, 1:3].float(),  # Returns (Seq, 2) [sin, cos]
             'gt_active': gt_seq[:, 3].float(),   # Returns (Seq,) [0 or 1]
             'microphones': mic_coords.float()
         }
 
-def get_dataloaders(batch_size=32, val_split=0.2, test_split=0.1, 
-                    processed_dir='data/processed', seq_len=50, seed=420):
-    all_files = [f for f in os.listdir(processed_dir) if f.endswith('.pt')]
-    random.seed(seed)
-    random.shuffle(all_files)
-    
-    total_files = len(all_files)
-    test_count = int(total_files * test_split)
-    val_count = int(total_files * val_split)
-    train_count = total_files - test_count - val_count
-    
-    train_files = all_files[:train_count]
-    val_files = all_files[train_count:train_count+val_count]
-    test_files = all_files[train_count+val_count:]
-    
-    train_dataset = LiSADataset(train_files, processed_dir, seq_len, stride=seq_len//2)
-    val_dataset = LiSADataset(val_files, processed_dir, seq_len, stride=seq_len)
-    test_dataset = LiSADataset(test_files, processed_dir, seq_len, stride=seq_len)
+def get_dataloaders(batch_size=32,
+                    train_dir='data/train_split',
+                    val_dir='data/val_split',
+                    test_dir='data/test_split',
+                    seq_len=50):
+    train_files = sorted([f for f in os.listdir(train_dir) if f.endswith('.pt')])
+    val_files   = sorted([f for f in os.listdir(val_dir)   if f.endswith('.pt')])
+    test_files  = sorted([f for f in os.listdir(test_dir)  if f.endswith('.pt')])
+
+    train_dataset = LiSADataset(train_files, train_dir, seq_len, stride=seq_len // 2)
+    val_dataset   = LiSADataset(val_files,   val_dir,   seq_len, stride=seq_len)
+    test_dataset  = LiSADataset(test_files,  test_dir,  seq_len, stride=seq_len)
     
     # loader_args:
-    train_loader_args = {'batch_size': batch_size, 'num_workers': 4, 'pin_memory': True, 'shuffle': True, 'persistent_workers': True}
-    eval_loader_args = {'batch_size': batch_size, 'num_workers': 4, 'pin_memory': True, 'shuffle': False, 'persistent_workers': True}
+    train_loader_args = {'batch_size': batch_size, 'num_workers': 0, 'pin_memory': True, 'shuffle': True, 'persistent_workers': False}
+    eval_loader_args = {'batch_size': batch_size, 'num_workers': 0, 'pin_memory': True, 'shuffle': False, 'persistent_workers': False}
     
     return (DataLoader(train_dataset, **train_loader_args),
             DataLoader(val_dataset, **eval_loader_args),

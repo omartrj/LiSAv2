@@ -1,29 +1,10 @@
-"""
-Questo file è pensato per essere eseguito una sola volta, prima di far partire il training.
-Il suo scopo è quello di processare le sequenze grezze che si trovano in `data/raw` e di salvarle in `data/processed` in un formato più comodo per il training.
-Ogni sequenza *raw* è composta da:
-- 4 file audio (dentro la cartella `sound`), uno per ogni microfono, in formato .wav
-- `gt.csv`, con header `time_s,sx,sy,dist,angle`, che contiene le coordinate (sx, sy), la distanza e l'angolo della sorgente sonora rispetto all'origine del sistema di riferimento, campionati ogni 0.05 secondi (20Hz)
-- `microphones.csv`, con header `mic_id,mx,my,mz`, che contiene le coordinate (mx, my, mz) di ogni microfono, in metri, rispetto all'origine del sistema di riferimento.
-In particolare, il processamento consiste in:
-- Caricare i 4 file audio
-- Caricare i file gt.csv e microphones.csv
-- Per ogni campione di gt.csv:
-    * Estrarre gli **ultimi** CONTEXT_WINDOW_MS millisecondi di audio da ogni microfono. Se non sono disponibili (inizio della registrazione), scarto il campione
-    * Calcolare lo spettrogramma complesso di ogni finestra audio -> ottengo 4 spettrogrammi complessi
-    * Dato theta (l'angolo in gradi in gt.csv), calcolare sin(theta) e cos(theta) e salvarli come target invece di theta, per evitare problemi di discontinuità circolare
-- Una volta processati i campioni di una sequenza, costruire un dizionario con le seguenti chiavi:
-    * `spectrograms`: Tensor di forma (N, 8, F, T), dove N è il numero di campioni in gt.csv, 8 è il numero di canali complessi (4 microfoni x 2 canali: reale e immaginario), F è il numero di bande di frequenza dello spettrogramma, T è il numero di frame temporali dello spettrogramma
-    * `gt`: Tensor di forma (N, 4), con colonne (distance, sin(angle), cos(angle), is_active)
-    * `microphones`: Tensor di forma (NUM_MICROPHONES, 3), contenente le coordinate (x, y, z) di ogni microfono
-- Salvare il dizionario in un file `.pt`.
-"""
 import os
 import pandas as pd
 import numpy as np
 import torch
 import torchaudio
 import json
+import random
 from tqdm import tqdm
 
 # COSTANTI
@@ -43,13 +24,21 @@ MAX_FREQ_BINS = 128 # 128 bin * (48000Hz / 1024) = ~6000Hz. Copre fondamentali e
 # Percorsi
 DATA_DIR = 'data'
 RAW_DATA_DIR = os.path.join(DATA_DIR, 'raw')
-PROCESSED_DATA_DIR = os.path.join(DATA_DIR, 'processed')
+TRAIN_SPLIT_DIR = os.path.join(DATA_DIR, 'train_split')
+VAL_SPLIT_DIR   = os.path.join(DATA_DIR, 'val_split')
+TEST_SPLIT_DIR  = os.path.join(DATA_DIR, 'test_split')
 AUDIO_SUBDIR = 'sound'
 GT_FILE = 'gt.csv'
 MIC_FILE = 'microphones.csv'
 
+# Parametri split train/val/test
+VAL_RATIO  = 0.2
+TEST_RATIO = 0.1
+SEED = 420
+
 
 def process_sequence(seq_name):
+    """Processa una sequenza e restituisce i dati grezzi (inv_dist non ancora normalizzato)."""
     seq_path = os.path.join(RAW_DATA_DIR, seq_name)
     audio_path = os.path.join(seq_path, AUDIO_SUBDIR)
     
@@ -59,7 +48,7 @@ def process_sequence(seq_name):
         mics_df = pd.read_csv(os.path.join(seq_path, MIC_FILE))
     except FileNotFoundError as e:
         print(f"Skipping {seq_name}: Metadata not found ({e})")
-        return
+        return None
 
     mic_coords = torch.tensor(mics_df[['mx', 'my', 'mz']].values, dtype=torch.float32)
 
@@ -69,7 +58,7 @@ def process_sequence(seq_name):
         af = os.path.join(audio_path, f'microphone_{i}.wav')
         if not os.path.exists(af):
             print(f"Skipping {seq_name}: {af} not found.")
-            return
+            return None
         waveform, sr = torchaudio.load(af)
         waveforms.append(waveform[0]) # Prendiamo solo il canale mono
 
@@ -136,43 +125,143 @@ def process_sequence(seq_name):
         angle_deg = row['angle']
         is_active = float(row['is_active'])
 
+        # Inversa della distanza (solo per campioni attivi; 0 per inattivi, verrà ignorato in training)
+        if is_active > 0.5 and dist > 0:
+            inv_dist = 1.0 / dist
+        else:
+            inv_dist = 0.0
+
         # Calcolo sin(theta) e cos(theta)
         angle_rad = np.deg2rad(angle_deg)
         sin_angle = np.sin(angle_rad)
         cos_angle = np.cos(angle_rad)
         
-        # (N, 4) con colonne (distance, sin(angle), cos(angle), is_active)
-        gt_tensor = torch.tensor([dist, sin_angle, cos_angle, is_active], dtype=torch.float32)
+        # (N, 4) con colonne (inv_distance, sin(angle), cos(angle), is_active)
+        # NOTA: inv_distance non è ancora normalizzato — la normalizzazione avviene dopo, usando le statistiche del train.
+        gt_tensor = torch.tensor([inv_dist, sin_angle, cos_angle, is_active], dtype=torch.float32)
 
         spectrogram_list.append(spec_tensor)
         gt_list.append(gt_tensor)
 
-    # Salva
+    # Restituisce il dizionario grezzo (inv_dist non normalizzato)
     if len(spectrogram_list) > 0:
-        final_specs = torch.stack(spectrogram_list) # Shape: (N, 8, F, T)
-        final_gt = torch.stack(gt_list)             # Shape: (N, 4)
-        
-        processed_dict = {
-            "spectrograms": final_specs,
-            "gt": final_gt,
+        return {
+            "spectrograms": torch.stack(spectrogram_list), # Shape: (N, 8, F, T)
+            "gt": torch.stack(gt_list),                    # Shape: (N, 4)
             "microphones": mic_coords,
         }
+    return None
 
-        os.makedirs(PROCESSED_DATA_DIR, exist_ok=True)
-        out_path = os.path.join(PROCESSED_DATA_DIR, f"{seq_name}.pt")
-        torch.save(processed_dict, out_path)
+
+def normalize_and_save(data, out_path, mean_inv_dist, std_inv_dist):
+    """Normalizza la colonna inv_dist con le statistiche del train e salva il file .pt."""
+    gt = data['gt'].clone()
+    is_active = gt[:, 3] > 0.5
+    # Normalizzazione solo sui campioni attivi: (inv_dist - mean) / std
+    gt[is_active, 0] = (gt[is_active, 0] - mean_inv_dist) / std_inv_dist
+    torch.save({
+        "spectrograms": data["spectrograms"],
+        "gt": gt,
+        "microphones": data["microphones"],
+    }, out_path)
+
 
 if __name__ == "__main__":
     if not os.path.exists(RAW_DATA_DIR):
         raise FileNotFoundError(f"Directory {RAW_DATA_DIR} not found. Run simulation first.")
 
-    sequences = [d for d in os.listdir(RAW_DATA_DIR) if os.path.isdir(os.path.join(RAW_DATA_DIR, d))]
-    sequences.sort()
-    
-    print(f"Found {len(sequences)} sequences to process.")
-    print("Starting preprocessing...\n")
-    
-    for seq in tqdm(sequences, desc="Processing sequences", unit="seq"):
-        process_sequence(seq)
-    
+    sequences = sorted([d for d in os.listdir(RAW_DATA_DIR) if os.path.isdir(os.path.join(RAW_DATA_DIR, d))])
+
+    # --- Split deterministico delle sequenze ---
+    random.seed(SEED)
+    shuffled = sequences.copy()
+    random.shuffle(shuffled)
+
+    total = len(shuffled)
+    test_count  = int(total * TEST_RATIO)
+    val_count   = int(total * VAL_RATIO)
+    train_count = total - test_count - val_count
+
+    train_seqs = shuffled[:train_count]
+    val_seqs   = shuffled[train_count:train_count + val_count]
+    test_seqs  = shuffled[train_count + val_count:]
+
+    print(f"Found {total} sequences → Train: {len(train_seqs)}, Val: {len(val_seqs)}, Test: {len(test_seqs)}")
+    print(f"  Train: {train_seqs}")
+    print(f"  Val:   {val_seqs}")
+    print(f"  Test:  {test_seqs}")
+
+    # --- Passo 1: preprocessing delle sequenze di training (in memoria) ---
+    print("\nStep 1/4 — Processing training sequences...")
+    train_data_list = []
+    for seq in tqdm(train_seqs, desc="Train", unit="seq"):
+        data = process_sequence(seq)
+        if data is not None:
+            train_data_list.append((seq, data))
+
+    # --- Passo 2: calcolo media e std di inv_dist SOLO sui campioni attivi del train ---
+    print("\nStep 2/4 — Computing normalization statistics from training data...")
+    all_inv_dist = []
+    for _, data in train_data_list:
+        gt = data['gt']
+        is_active = gt[:, 3] > 0.5
+        if is_active.any():
+            all_inv_dist.append(gt[is_active, 0])
+
+    if not all_inv_dist:
+        raise ValueError("No active samples found in training data! Cannot compute normalization stats.")
+
+    all_inv_dist_tensor = torch.cat(all_inv_dist)
+    mean_inv_dist = all_inv_dist_tensor.mean().item()
+    std_inv_dist  = all_inv_dist_tensor.std().item()
+
+    print(f"  inv_dist stats:  mean = {mean_inv_dist:.6f},  std = {std_inv_dist:.6f}")
+    print(f"  (corrispondono a distanze: mean ≈ {1/mean_inv_dist:.2f} m)")
+
+    # --- Passo 3: normalizzazione e salvataggio di tutti e tre gli split ---
+    print("\nStep 3/4 — Normalizing and saving splits...")
+
+    os.makedirs(TRAIN_SPLIT_DIR, exist_ok=True)
+    for seq, data in tqdm(train_data_list, desc="Saving train", unit="seq"):
+        normalize_and_save(data, os.path.join(TRAIN_SPLIT_DIR, f"{seq}.pt"), mean_inv_dist, std_inv_dist)
+
+    os.makedirs(VAL_SPLIT_DIR, exist_ok=True)
+    for seq in tqdm(val_seqs, desc="Processing val", unit="seq"):
+        data = process_sequence(seq)
+        if data is not None:
+            normalize_and_save(data, os.path.join(VAL_SPLIT_DIR, f"{seq}.pt"), mean_inv_dist, std_inv_dist)
+
+    os.makedirs(TEST_SPLIT_DIR, exist_ok=True)
+    for seq in tqdm(test_seqs, desc="Processing test", unit="seq"):
+        data = process_sequence(seq)
+        if data is not None:
+            normalize_and_save(data, os.path.join(TEST_SPLIT_DIR, f"{seq}.pt"), mean_inv_dist, std_inv_dist)
+
+    # --- Passo 4: salvataggio dei parametri di preprocessing ---
+    print("\nStep 4/4 — Saving preprocessing parameters...")
+
+    frames_per_window = (int((CONTEXT_WINDOW_MS / 1000.0) * AUDIO_SAMPLE_RATE) - WIN_LENGTH) // HOP_LENGTH + 1
+    params = {
+        "audio_sample_rate":  AUDIO_SAMPLE_RATE,
+        "gt_sample_rate":     GT_SAMPLE_RATE,
+        "context_window_ms":  CONTEXT_WINDOW_MS,
+        "num_microphones":    NUM_MICROPHONES,
+        "n_fft":              N_FFT,
+        "win_length":         WIN_LENGTH,
+        "hop_length":         HOP_LENGTH,
+        "max_freq_bins":      MAX_FREQ_BINS,
+        "frames_per_window":  frames_per_window,
+        "normalization": {
+            "target":         "inv_dist",
+            "formula":        "gt[:, 0] = (1/dist - mean_inv_dist) / std_inv_dist  [solo campioni attivi]",
+            "mean_inv_dist":  mean_inv_dist,
+            "std_inv_dist":   std_inv_dist,
+        },
+    }
+
+    params_path = os.path.join(DATA_DIR, 'preprocessing_params.json')
+    with open(params_path, 'w') as f:
+        json.dump(params, f, indent=2)
+
+    print(f"  Preprocessing params saved to: {params_path}")
     print("\nProcessing completed.")

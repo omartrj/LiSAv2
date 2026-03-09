@@ -1,5 +1,6 @@
 pandas
 numpy
+scikit-learn
 tqdm
 matplotlib
 # PyTorch with CUDA 13.0 support

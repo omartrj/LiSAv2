@@ -101,9 +101,8 @@ class LiSANet(nn.Module):
         # 5. Heads
         shared_features = self.shared_head(rnn_out)
         
-        # Distanza (Softplus > 0)
-        dist_logit = self.dist_head(shared_features).squeeze(-1)
-        dist_pred = torch.nn.functional.softplus(dist_logit)
+        # Inversa distanza normalizzata (output lineare: può essere negativo)
+        dist_pred = self.dist_head(shared_features).squeeze(-1)
 
         # ACCDOA: (Batches, SeqLen, 2)
         # L'output è un vettore [x, y] dove la norma è la probabilità (attività)
@@ -189,8 +188,8 @@ class LiSALSTMNet(nn.Module):
         
         shared_features = self.shared_head(rnn_out)
         
-        dist_logit = self.dist_head(shared_features).squeeze(-1)
-        dist_pred = torch.nn.functional.softplus(dist_logit)
+        # Inversa distanza normalizzata (output lineare: può essere negativo)
+        dist_pred = self.dist_head(shared_features).squeeze(-1)
 
         accdoa_pred = self.accdoa_head(shared_features)
         
