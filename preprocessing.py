@@ -187,9 +187,6 @@ if __name__ == "__main__":
     test_seqs  = shuffled[train_count + val_count:]
 
     print(f"Found {total} sequences → Train: {len(train_seqs)}, Val: {len(val_seqs)}, Test: {len(test_seqs)}")
-    print(f"  Train: {train_seqs}")
-    print(f"  Val:   {val_seqs}")
-    print(f"  Test:  {test_seqs}")
 
     # --- Passo 1: preprocessing delle sequenze di training (in memoria) ---
     print("\nStep 1/4 — Processing training sequences...")
@@ -216,7 +213,6 @@ if __name__ == "__main__":
     std_inv_dist  = all_inv_dist_tensor.std().item()
 
     print(f"  inv_dist stats:  mean = {mean_inv_dist:.6f},  std = {std_inv_dist:.6f}")
-    print(f"  (corrispondono a distanze: mean ≈ {1/mean_inv_dist:.2f} m)")
 
     # --- Passo 3: normalizzazione e salvataggio di tutti e tre gli split ---
     print("\nStep 3/4 — Normalizing and saving splits...")
