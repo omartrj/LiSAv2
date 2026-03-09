@@ -16,7 +16,7 @@ from utils import MetricTracker
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class WeightedMultiLoss(nn.Module):
-    def __init__(self, w_dist=1.0, w_accdoa=1.0, w_smooth=1.0, use_smooth_loss=False):
+    def __init__(self, w_dist=1.0, w_accdoa=2.0, w_smooth=1.0, use_smooth_loss=False):
         super().__init__()
         self.mse = nn.MSELoss(reduction='none')
         self.huber = nn.HuberLoss(reduction='none')
