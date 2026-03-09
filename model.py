@@ -57,18 +57,16 @@ class LiSANet(nn.Module):
         )
         
         # SHARED HEAD
-        # self.shared_head = nn.Sequential(
-        #     nn.Linear(gru_hidden_size, 128),
-        #     nn.ReLU(),
-        #     nn.Dropout(0.2),
-        #     nn.Linear(128, 64),
-        #     nn.ReLU()
-        # )
+        self.shared_head = nn.Sequential(
+            nn.Linear(gru_hidden_size, 128),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(128, 64),
+            nn.ReLU()
+        )
         
         # HEAD DISTANZA
         self.dist_head = nn.Sequential(
-            nn.Linear(gru_hidden_size, 64),
-            nn.ReLU(),
             nn.Linear(64, 32),
             nn.ReLU(),
             nn.Linear(32, 1) 
@@ -76,8 +74,6 @@ class LiSANet(nn.Module):
         
         # HEAD ACCDOA (Attività e Angolo combinati: [prob*cos, prob*sin])
         self.accdoa_head = nn.Sequential(
-            nn.Linear(gru_hidden_size, 64),
-            nn.ReLU(),
             nn.Linear(64, 32),
             nn.ReLU(),
             nn.Linear(32, 2)
